@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Лесозаготовка: Мультиплеер (PeerJS + TURN Relay)</title>
+    <!-- Подключаем библиотеку PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { 
+            background: #1b262c; 
+            color: white; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; 
+            margin-top: 10px; 
+        }
+        canvas { 
+            background: #2e7d32; 
+            border: 4px solid #1b5e20; 
+            border-radius: 12px; 
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+        }
+        .network-panel {
+            background: #0f4c81;
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        input, button {
+            padding: 6px 12px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: none;
+            margin: 0 4px;
+        }
+        button {
+            background: #00adb5;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:hover { background: #008c93; }
+        .ui-panel {
+            background: #222831;
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .hint {
+            background: #3282b8;
+            color: #fff;
+            padding: 8px 15px;
+            border-radius: 5px;
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 14px;
+        }
+        #errorLog {
+            color: #ff5252;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>🌲 ЛЕСОЗАГОТОВКА: ОНЛАЙН (TURN RELAY) 🏡</h2>
+
+    <div class="network-panel">
+        <span id="netStatus">Инициализация PeerJS...</span> &nbsp;|&nbsp;
+        <button onclick="createRoom()">Создать комнату</button>
+        <input type="text" id="roomIdInput" placeholder="Код комнаты..." style="width: 120px;">
+        <button onclick="joinRoom()">Подключиться</button>
+        <div id="errorLog"></div>
+    </div>
+    <br>
+
+    <div class="ui-panel" id="ui">Загрузка игры...</div>
+    <br>
+
+    <canvas id="gameCanvas" width="960" height="560"></canvas>
+    <br>
+    
+    <div class="hint" id="hint">
+        Управление: <b>Стрелочки / WASD</b> — движение. <b>[ПРОБЕЛ]</b> — погрузка/сгрузка. <b>[F]</b> — заправка.
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Инициализация PeerJS с твоими STUN / TURN серверами
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { 
+                        urls: 'turn:openrelay.metered.ca:80',
+                        username: 'openrelay',
+                        credential: 'openrelay'
+                    },
+                    { 
+                        urls: 'turn:openrelay.metered.ca:443',
+                        username: 'openrelay',
+                        credential: 'openrelay'
+                    }
+                ]
+            }
+        };
+
+        let peer = null;
+        let conn = null;
+        let myPeerId = null;
+        let isHost = false;
+        let myRole = 'single';
+
+        function initPeer() {
+            peer = new Peer(peerConfig);
+
+            peer.on('open', (id) => {
+                myPeerId = id;
+                document.getElementById('netStatus').innerHTML = "🟢 Готов! Нажмите «Создать комнату» или введите код.";
+            });
+
+            peer.on('connection', (connection) => {
+                conn = connection;
+                setupConnection();
+            });
+
+            peer.on('error', (err) => {
+                showErr("Ошибка PeerJS: " + err.type + " - " + err.message);
+            });
+        }
+
+        function showErr(msg) {
+            document.getElementById('errorLog').innerHTML = "⚠️ " + msg;
+        }
+
+        function createRoom() {
+            if (!myPeerId) { showErr("Сеть еще инициализируется, подождите пару секунд..."); return; }
+            isHost = true;
+            myRole = 'host';
+            myTruck.x = 440;
+            document.getElementById('netStatus').innerHTML = `Код комнаты: <b style="color:#00fff5; font-size:18px;">${myPeerId}</b> (Передайте его другу)`;
+            document.getElementById('errorLog').innerHTML = "";
+        }
+
+        function joinRoom() {
+            const targetId = document.getElementById('roomIdInput').value.trim();
+            if (!targetId) { showErr("Введите код комнаты!"); return; }
+
+            isHost = false;
+            myRole = 'guest';
+            myTruck.x = 520;
+            myTruck.color = '#e53935';
+            otherTruck.color = '#1565c0';
+
+            document.getElementById('netStatus').innerHTML = "Подключение через TURN...";
+            conn = peer.connect(targetId);
+            setupConnection();
+        }
+
+        function setupConnection() {
+            conn.on('open', () => {
+                document.getElementById('netStatus').innerHTML = "🟢 <b style='color:#76ff03;'>ИГРОКИ ПОДКЛЮЧЕНЫ ЧЕРЕЗ TURN-РЕЛЕ!</b>";
+                document.getElementById('errorLog').innerHTML = "";
+            });
+
+            conn.on('data', (data) => {
+                if (data.truck) {
+                    otherTruck.x = data.truck.x;
+                    otherTruck.y = data.truck.y;
+                    otherTruck.angle = data.truck.angle;
+                    otherTruck.cargoAmount = data.truck.cargoAmount;
+                    otherTruck.cargoType = data.truck.cargoType;
+                }
+
+                if (!isHost && data.world) {
+                    for (let k in data.world.zones) {
+                        zones[k].logs = data.world.zones[k].logs;
+                        zones[k].rawLogs = data.world.zones[k].rawLogs;
+                        zones[k].boards = data.world.zones[k].boards;
+                        zones[k].houses = data.world.zones[k].houses;
+                    }
+                    coins = data.world.coins;
+                }
+            });
+
+            conn.on('close', () => {
+                document.getElementById('netStatus').innerHTML = "🔴 Второй игрок отключился";
+            });
+        }
+
+        const myTruck = {
+            x: 440, y: 280, angle: 0, speed: 0,
+            maxSpeed: 3.2, accel: 0.1, friction: 0.95, turnSpeed: 0.05,
+            cargoAmount: 0, cargoType: 'empty', maxCargo: 20,
+            color: '#1565c0'
+        };
+
+        const otherTruck = {
+            x: -1000, y: -1000, angle: 0,
+            cargoAmount: 0, cargoType: 'empty',
+            color: '#e53935'
+        };
+
+        let fuel = 100;
+        let coins = 20;
+
+        const zones = {
+            camp1: { x: 100, y: 90, label: '🌲 Лесоповал №1', logs: 50, maxLogs: 200 },
+            camp2: { x: 860, y: 470, label: '🌲 Лесоповал №2', logs: 50, maxLogs: 200 },
+            sawmill1: { x: 480, y: 90, label: '🏭 Лесопилка №1', rawLogs: 0, boards: 0, maxLogs: 200, maxBoards: 400 },
+            sawmill2: { x: 480, y: 470, label: '🏭 Лесопилка №2', rawLogs: 0, boards: 0, maxLogs: 200, maxBoards: 400 },
+            town1: { x: 860, y: 90, label: '🏡 Посёлок "Северный"', boards: 0, houses: 0 },
+            town2: { x: 100, y: 470, label: '🏡 Посёлок "Южный"', boards: 0, houses: 0 },
+            gas: { x: 480, y: 280, label: '⛽ АЗС' }
+        };
+
+        const boardsPerHouse = 10;
+        const town1Houses = [{x: 820, y: 35}, {x: 860, y: 35}, {x: 900, y: 35}, {x: 820, y: 145}, {x: 860, y: 145}, {x: 900, y: 145}];
+        const town2Houses = [{x: 60, y: 415}, {x: 100, y: 415}, {x: 140, y: 415}, {x: 60, y: 525}, {x: 100, y: 525}, {x: 140, y: 525}];
+
+        let syncTimer = 0;
+        function sendNetworkSync(dt) {
+            if (!conn || !conn.open) return;
+
+            syncTimer += dt;
+            if (syncTimer >= 0.033) { // ~30 кадров в секунду
+                syncTimer = 0;
+                const payload = {
+                    truck: {
+                        x: myTruck.x,
+                        y: myTruck.y,
+                        angle: myTruck.angle,
+                        cargoAmount: myTruck.cargoAmount,
+                        cargoType: myTruck.cargoType
+                    }
+                };
+                if (isHost) {
+                    payload.world = { zones: zones, coins: coins };
+                }
+                conn.send(payload);
+            }
+        }
+
+        const keys = {};
+        window.addEventListener('keydown', e => { keys[e.key] = true; });
+        window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+        let lastTime = performance.now();
+        let logGenTimer = 0;
+        let processTimer = 0;
+        let rentTimer = 0;
+
+        function gameLoop(timestamp) {
+            let dt = (timestamp - lastTime) / 1000;
+            if (isNaN(dt)) dt = 0;
+            lastTime = timestamp;
+
+            if (isHost || myRole === 'single') {
+                logGenTimer += dt;
+                if (logGenTimer >= 1.0) {
+                    if (zones.camp1.logs < zones.camp1.maxLogs) zones.camp1.logs++;
+                    if (zones.camp2.logs < zones.camp2.maxLogs) zones.camp2.logs++;
+                    logGenTimer = 0;
+                }
+
+                processTimer += dt;
+                if (processTimer >= 1.0) {
+                    if (zones.sawmill1.rawLogs > 0 && zones.sawmill1.boards < zones.sawmill1.maxBoards) {
+                        zones.sawmill1.rawLogs--; zones.sawmill1.boards += 2;
+                    }
+                    if (zones.sawmill2.rawLogs > 0 && zones.sawmill2.boards < zones.sawmill2.maxBoards) {
+                        zones.sawmill2.rawLogs--; zones.sawmill2.boards += 2;
+                    }
+                    processTimer = 0;
+                }
+
+                rentTimer += dt;
+                if (rentTimer >= 3.5) {
+                    let totalHouses = zones.town1.houses + zones.town2.houses;
+                    if (totalHouses > 0) coins += totalHouses * 5;
+                    rentTimer = 0;
+                }
+            }
+
+            updateTruck();
+            sendNetworkSync(dt);
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updateTruck() {
+            if (fuel <= 0) return;
+
+            if (keys['ArrowUp'] || keys['w'] || keys['W'] || keys['Ц'] || keys['ц']) {
+                myTruck.speed = Math.min(myTruck.maxSpeed, myTruck.speed + myTruck.accel);
+                fuel -= 0.012;
+            } else if (keys['ArrowDown'] || keys['s'] || keys['S'] || keys['Ы'] || keys['ы']) {
+                myTruck.speed = Math.max(-myTruck.maxSpeed / 2, myTruck.speed - myTruck.accel);
+                fuel -= 0.012;
+            } else {
+                myTruck.speed *= myTruck.friction;
+            }
+
+            if (Math.abs(myTruck.speed) > 0.1) {
+                let dir = myTruck.speed > 0 ? 1 : -1;
+                if (keys['ArrowLeft'] || keys['a'] || keys['A'] || keys['Ф'] || keys['ф']) myTruck.angle -= myTruck.turnSpeed * dir;
+                if (keys['ArrowRight'] || keys['d'] || keys['D'] || keys['В'] || keys['в']) myTruck.angle += myTruck.turnSpeed * dir;
+            }
+
+            myTruck.x += Math.cos(myTruck.angle) * myTruck.speed;
+            myTruck.y += Math.sin(myTruck.angle) * myTruck.speed;
+
+            myTruck.x = Math.max(20, Math.min(canvas.width - 20, myTruck.x));
+            myTruck.y = Math.max(20, Math.min(canvas.height - 20, myTruck.y));
+        }
+
+        window.addEventListener('keydown', e => {
+            if (fuel <= 0) return;
+            const activeZone = getActiveZone();
+
+            if (e.key === ' ') {
+                if (!activeZone) return;
+
+                if (activeZone === zones.camp1 || activeZone === zones.camp2) {
+                    if (activeZone.logs > 0 && myTruck.cargoAmount < myTruck.maxCargo && (myTruck.cargoType === 'empty' || myTruck.cargoType === 'logs')) {
+                        myTruck.cargoType = 'logs'; myTruck.cargoAmount++; activeZone.logs--;
+                    }
+                } else if (activeZone === zones.sawmill1 || activeZone === zones.sawmill2) {
+                    if (myTruck.cargoType === 'logs' && myTruck.cargoAmount > 0 && activeZone.rawLogs < activeZone.maxLogs) {
+                        myTruck.cargoAmount--; activeZone.rawLogs++;
+                        if (myTruck.cargoAmount === 0) myTruck.cargoType = 'empty';
+                    } else if ((myTruck.cargoType === 'empty' || myTruck.cargoType === 'boards') && myTruck.cargoAmount < myTruck.maxCargo && activeZone.boards > 0) {
+                        myTruck.cargoType = 'boards'; myTruck.cargoAmount++; activeZone.boards--;
+                    }
+                } else if (activeZone === zones.town1 || activeZone === zones.town2) {
+                    if (myTruck.cargoType === 'boards' && myTruck.cargoAmount > 0) {
+                        myTruck.cargoAmount--; activeZone.boards++;
+                        if (myTruck.cargoAmount === 0) myTruck.cargoType = 'empty';
+
+                        if (activeZone.boards >= boardsPerHouse) {
+                            activeZone.boards -= boardsPerHouse; activeZone.houses++; coins += 50;
+                        }
+                    }
+                }
+            } else if (e.key === 'f' || e.key === 'F' || e.key === 'а' || e.key === 'А') {
+                if (activeZone === zones.gas && coins >= 10 && fuel < 100) {
+                    fuel = Math.min(100, fuel + 35); coins -= 10;
+                }
+            }
+        });
+
+        function getActiveZone() {
+            for (let key in zones) {
+                let z = zones[key];
+                if (Math.hypot(myTruck.x - z.x, myTruck.y - z.y) < 55) return z;
+            }
+            return null;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawRoads();
+            drawHouses();
+            drawZones();
+            drawTruckObject(otherTruck);
+            drawTruckObject(myTruck);
+            updateUI();
+        }
+
+        function drawRoads() {
+            ctx.lineWidth = 42; ctx.strokeStyle = '#444'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(100, 280); ctx.lineTo(860, 280);
+            ctx.moveTo(480, 90);  ctx.lineTo(480, 470);
+            ctx.moveTo(100, 90);  ctx.lineTo(860, 90);  ctx.lineTo(860, 470);
+            ctx.lineTo(100, 470); ctx.lineTo(100, 90);
+            ctx.stroke();
+
+            ctx.lineWidth = 2; ctx.strokeStyle = '#fbc02d'; ctx.setLineDash([8, 8]); ctx.stroke(); ctx.setLineDash([]);
+        }
+
+        function drawZones() {
+            for (let key in zones) {
+                let z = zones[key];
+                ctx.beginPath(); ctx.arc(z.x, z.y, 40, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.15)'; ctx.fill();
+                ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+
+                if (key.startsWith('camp')) {
+                    ctx.fillText('🌲 ' + z.label, z.x, z.y - 48); ctx.fillText(`🪵 ${z.logs}/${z.maxLogs}`, z.x, z.y + 55);
+                } else if (key.startsWith('sawmill')) {
+                    ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🪵${z.rawLogs} ➔ 🪵${z.boards}`, z.x, z.y + 55);
+                } else if (key.startsWith('town')) {
+                    ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🏡 Домов: ${z.houses}`, z.x, z.y + 55);
+                } else if (key === 'gas') {
+                    ctx.fillText('⛽ АЗС', z.x, z.y - 48);
+                }
+            }
+        }
+
+        function drawHouses() {
+            for (let i = 0; i < zones.town1.houses && i < town1Houses.length; i++) drawHouseIcon(town1Houses[i].x, town1Houses[i].y);
+            for (let i = 0; i < zones.town2.houses && i < town2Houses.length; i++) drawHouseIcon(town2Houses[i].x, town2Houses[i].y);
+        }
+
+        function drawHouseIcon(x, y) {
+            ctx.fillStyle = '#d7ccc8'; ctx.fillRect(x, y, 22, 18);
+            ctx.fillStyle = '#b71c1c'; ctx.beginPath();
+            ctx.moveTo(x - 3, y); ctx.lineTo(x + 11, y - 10); ctx.lineTo(x + 25, y); ctx.fill();
+        }
+
+        function drawTruckObject(t) {
+            if (t.x < 0) return;
+            ctx.save();
+            ctx.translate(t.x, t.y);
+            ctx.rotate(t.angle);
+
+            ctx.fillStyle = t.color;
+            ctx.fillRect(10, -12, 18, 24);
+
+            ctx.fillStyle = '#8d6e63';
+            ctx.fillRect(-28, -14, 36, 28);
+
+            if (t.cargoAmount > 0) {
+                ctx.fillStyle = t.cargoType === 'logs' ? '#5d4037' : '#fff59d';
+                for (let b = 0; b < t.cargoAmount; b++) {
+                    ctx.fillRect(-26 + (b * 1.6), -10, 2, 20);
+                }
+            }
+
+            ctx.fillStyle = '#000';
+            ctx.fillRect(10, -16, 7, 3); ctx.fillRect(10, 13, 7, 3);
+            ctx.fillRect(-22, -16, 7, 3); ctx.fillRect(-22, 13, 7, 3);
+            ctx.restore();
+        }
+
+        function updateUI() {
+            const ui = document.getElementById('ui');
+            const hint = document.getElementById('hint');
+            let cargoText = myTruck.cargoType === 'logs' ? 'Бревна' : (myTruck.cargoType === 'boards' ? 'Доски' : 'Пусто');
+
+            ui.innerHTML = `⛽ Бензин: ${Math.round(fuel)}% | 🪙 Монеты: ${coins} | 🚚 Кузов: ${myTruck.cargoAmount}/${myTruck.maxCargo} (${cargoText})<br>` +
+                           `🌲 Лесоповалы: №1 (${zones.camp1.logs}) | №2 (${zones.camp2.logs}) &nbsp;|&nbsp; ` +
+                           `🏭 Лесопилки: №1 (${zones.sawmill1.boards} досок) | №2 (${zones.sawmill2.boards} досок)<br>` +
+                           `🏡 Посёлки: Северный (${zones.town1.houses}) | Южный (${zones.town2.houses})`;
+
+            if (fuel <= 0) {
+                hint.innerHTML = "💥 <b>Бензин закончился!</b> Перезагрузите страницу.";
+                return;
+            }
+
+            const activeZone = getActiveZone();
+            if (activeZone) {
+                if (activeZone === zones.camp1 || activeZone === zones.camp2) hint.innerHTML = `👉 <b>${activeZone.label}</b>. Нажмите <b>[ПРОБЕЛ]</b> для погрузки бревен!`;
+                else if (activeZone === zones.sawmill1 || activeZone === zones.sawmill2) hint.innerHTML = `👉 <b>${activeZone.label}</b>. <b>[ПРОБЕЛ]</b> — погрузка бревен / забрание досок.`;
+                else if (activeZone === zones.town1 || activeZone === zones.town2) hint.innerHTML = `🏡 <b>${activeZone.label}</b>. Сгружайте ДОСКИ на <b>[ПРОБЕЛ]</b>!`;
+                else if (activeZone === zones.gas) hint.innerHTML = `⛽ <b>АЗС</b>. Нажмите <b>[F]</b> для заправки!`;
+            } else {
+                hint.innerHTML = "Управление: <b>WASD / Стрелочки</b>.";
+            }
+        }
+
+        initPeer();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
