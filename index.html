@@ -2,8 +2,9 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Лесозаготовка: Мультиплеер (Исправленный)</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <title>Лесозаготовка: Photon Мультиплеер</title>
+    <!-- Официальный SDK Photon Engine -->
+    <script src="https://cdn.jsdelivr.net/npm/photon-javascript-sdk@4.1.0/Photon-Javascript_SDK.min.js"></script>
     <style>
         body { 
             background: #1b262c; 
@@ -25,14 +26,11 @@
             border-radius: 8px;
             margin-bottom: 8px;
         }
-        input, button {
-            padding: 6px 12px;
-            font-size: 14px;
+        button {
+            padding: 8px 16px;
+            font-size: 15px;
             border-radius: 4px;
             border: none;
-            margin: 0 4px;
-        }
-        button {
             background: #00adb5;
             color: white;
             font-weight: bold;
@@ -57,27 +55,19 @@
             margin-top: 8px;
             font-size: 14px;
         }
-        #errorLog {
-            color: #ff5252;
-            font-weight: bold;
-            margin-top: 5px;
-        }
     </style>
 </head>
 <body>
 
-    <h2>🌲 ЛЕСОЗАГОТОВКА: ОНЛАЙН МУЛЬТИПЛЕЕР 🏡</h2>
+    <h2>🌲 ЛЕСОЗАГОТОВКА: PHOTON ENGINE МУЛЬТИПЛЕЕР 🏡</h2>
 
     <div class="network-panel">
-        <span id="netStatus">Статус: Готов к подключению</span> &nbsp;|&nbsp;
-        <button onclick="createRoom()">Создать комнату</button>
-        <input type="text" id="roomIdInput" placeholder="Код комнаты..." style="width: 120px;">
-        <button onclick="joinRoom()">Подключиться</button>
-        <div id="errorLog"></div>
+        <span id="netStatus">Статус: Нажмите кнопку для подключения</span> &nbsp;|&nbsp;
+        <button onclick="connectPhoton()">⚡ Подключиться к Photon</button>
     </div>
     <br>
 
-    <div class="ui-panel" id="ui">Загрузка игры...</div>
+    <div class="ui-panel" id="ui">Нажмите «Подключиться к Photon», чтобы начать игру.</div>
     <br>
 
     <canvas id="gameCanvas" width="960" height="560"></canvas>
@@ -88,11 +78,15 @@
     </div>
 
     <script>
+        // ========================================================
+        // 56e42195-3d45-442c-a878-f6d101290fd0
+        // ========================================================
+        const PHOTON_APP_ID = "56e42195-3d45-442c-a878-f6d101290fd0"; 
+
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        let peer = null;
-        let conn = null;
+        let client = null;
         let isHost = false;
         let myRole = 'single';
 
@@ -126,181 +120,101 @@
         const town1Houses = [{x: 820, y: 35}, {x: 860, y: 35}, {x: 900, y: 35}, {x: 820, y: 145}, {x: 860, y: 145}, {x: 900, y: 145}];
         const town2Houses = [{x: 60, y: 415}, {x: 100, y: 415}, {x: 140, y: 415}, {x: 60, y: 525}, {x: 100, y: 525}, {x: 140, y: 525}];
 
-        const peerConfig = {
-            config: {
-                'iceServers': [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' }
-                ]
-            },
-            debug: 1
-        };
-
-        function showErr(msg) {
-            document.getElementById('errorLog').innerHTML = "⚠️ " + msg;
-        }
-
-        function initPeer(customId = null, callback = null) {
-            if (peer) peer.destroy();
-            
-            document.getElementById('errorLog').innerHTML = "";
-            document.getElementById('netStatus').innerHTML = "Подключение к серверу...";
-
-            peer = customId ? new Peer(customId, peerConfig) : new Peer(peerConfig);
-
-            peer.on('open', id => {
-                document.getElementById('netStatus').innerHTML = `Твой код: <b style="color:#00fff5; font-size:16px;">${id}</b>`;
-                if (callback) callback(id);
-            });
-
-            peer.on('connection', c => {
-                conn = c;
-                setupConnection();
-            });
-
-            peer.on('error', err => {
-                console.error("PeerJS Error:", err);
-                if (err.type === 'unavailable-id') {
-                    showErr("Этот код уже занят, попробуйте еще раз.");
-                } else if (err.type === 'peer-unavailable') {
-                    showErr("Комната с таким кодом не найдена! Проверьте правильность ввода.");
-                } else {
-                    showErr("Ошибка сети: " + err.type);
-                }
-            });
-        }
-
-        function createRoom() {
-            const randomCode = "log-" + Math.floor(1000 + Math.random() * 9000);
-            initPeer(randomCode, () => {
-                isHost = true;
-                myRole = 'host';
-                myTruck.x = 440;
-                document.getElementById('netStatus').innerHTML += " (Ждем второго игрока...)";
-            });
-        }
-
-        function joinRoom() {
-            const hostId = document.getElementById('roomIdInput').value.trim();
-            if (!hostId) {
-                showErr("Введите код комнаты в текстовое поле!");
+        function connectPhoton() {
+            if (PHOTON_APP_ID === "ВСТАВЬ_СВОЙ_APP_ID_СЮДА") {
+                alert("Пожалуйста, вставьте свой App ID из Photon в код файла index.html!");
                 return;
             }
 
-            initPeer(null, () => {
-                document.getElementById('netStatus').innerHTML = "Соединение с хозяином комнаты...";
-                conn = peer.connect(hostId, { reliable: true });
-                isHost = false;
-                myRole = 'guest';
-                myTruck.x = 520;
-                myTruck.color = '#e53935';
-                otherTruck.color = '#1565c0';
-                setupConnection();
-            });
-        }
+            document.getElementById('netStatus').innerHTML = "Подключение к Photon Cloud...";
 
-        function setupConnection() {
-            if (!conn) return;
+            client = new Photon.LoadBalancing.LoadBalancingClient(
+                Photon.LoadBalancing.Constants.ConnectionProtocol.Wss,
+                PHOTON_APP_ID,
+                "1.0"
+            );
 
-            conn.on('open', () => {
-                document.getElementById('netStatus').innerHTML = "🟢 <b style='color:#76ff03;'>Игроки подключены!</b>";
-                document.getElementById('errorLog').innerHTML = "";
-            });
+            client.onStateChange = function (state) {
+                const L = Photon.LoadBalancing.LoadBalancingClient.State;
+                if (state === L.ConnectedToMaster) {
+                    document.getElementById('netStatus').innerHTML = "🟢 Вход в игровую комнату Photon...";
+                    client.joinOrCreateRoom("LesopovalMainRoom");
+                } else if (state === L.JoinedRoom) {
+                    isHost = client.myActor().actorNr === client.myRoom().masterClientId;
+                    myRole = isHost ? 'host' : 'guest';
 
-            conn.on('data', data => {
-                if (data.type === 'SYNC') {
-                    otherTruck.x = data.truck.x;
-                    otherTruck.y = data.truck.y;
-                    otherTruck.angle = data.truck.angle;
-                    otherTruck.cargoAmount = data.truck.cargoAmount;
-                    otherTruck.cargoType = data.truck.cargoType;
-
-                    if (!isHost && data.world) {
-                        for (let k in data.world.zones) {
-                            zones[k].logs = data.world.zones[k].logs;
-                            zones[k].rawLogs = data.world.zones[k].rawLogs;
-                            zones[k].boards = data.world.zones[k].boards;
-                            zones[k].houses = data.world.zones[k].houses;
-                        }
-                        coins = data.world.coins;
+                    if (isHost) {
+                        document.getElementById('netStatus').innerHTML = "🟢 Игрок 1 (Хозяин). Ждём второго игрока...";
+                    } else {
+                        document.getElementById('netStatus').innerHTML = "🟢 Игрок 2 (Гость подключился)!";
+                        myTruck.x = 520;
+                        myTruck.color = '#e53935';
+                        otherTruck.color = '#1565c0';
                     }
-                } else if (data.type === 'INTERACT' && isHost) {
-                    handleGuestInteract(data.zone, data.action);
                 }
-            });
+            };
 
-            conn.on('close', () => {
-                document.getElementById('netStatus').innerHTML = "🔴 Второй игрок отключился";
-            });
+            client.onEvent = function (code, content, actorNr) {
+                if (code === 1) { // Синхронизация движения
+                    otherTruck.x = content.truck.x;
+                    otherTruck.y = content.truck.y;
+                    otherTruck.angle = content.truck.angle;
+                    otherTruck.cargoAmount = content.truck.cargoAmount;
+                    otherTruck.cargoType = content.truck.cargoType;
+
+                    if (!isHost && content.world) {
+                        for (let k in content.world.zones) {
+                            zones[k].logs = content.world.zones[k].logs;
+                            zones[k].rawLogs = content.world.zones[k].rawLogs;
+                            zones[k].boards = content.world.zones[k].boards;
+                            zones[k].houses = content.world.zones[k].houses;
+                        }
+                        coins = content.world.coins;
+                    }
+                } else if (code === 2 && isHost) { // Действие гостя
+                    handleGuestInteract(content.zone, content.action);
+                }
+            };
+
+            client.connectToRegionMaster("EU");
         }
 
         function handleGuestInteract(zoneKey, action) {
             const z = zones[zoneKey];
-            if (action === 'LOG_TAKEN') {
-                if (z && z.logs > 0) z.logs--;
-            } else if (action === 'LOG_UNLOADED') {
-                if (z && z.rawLogs < z.maxLogs) z.rawLogs++;
-            } else if (action === 'BOARD_TAKEN') {
-                if (z && z.boards > 0) z.boards--;
-            } else if (action === 'BOARD_DELIVERED') {
-                if (z) {
-                    z.boards++;
-                    if (z.boards >= boardsPerHouse) {
-                        z.boards -= boardsPerHouse;
-                        z.houses++;
-                        coins += 50;
-                    }
-                }
-            } else if (action === 'REFUEL') {
-                if (coins >= 10) coins -= 10;
-            }
+            if (action === 'LOG_TAKEN' && z && z.logs > 0) z.logs--;
+            else if (action === 'LOG_UNLOADED' && z && z.rawLogs < z.maxLogs) z.rawLogs++;
+            else if (action === 'BOARD_TAKEN' && z && z.boards > 0) z.boards--;
+            else if (action === 'BOARD_DELIVERED' && z) {
+                z.boards++;
+                if (z.boards >= boardsPerHouse) { z.boards -= boardsPerHouse; z.houses++; coins += 50; }
+            } else if (action === 'REFUEL' && coins >= 10) coins -= 10;
         }
 
         function sendNetworkSync() {
-            if (conn && conn.open) {
+            if (client && client.isJoinedToRoom()) {
                 const payload = {
-                    type: 'SYNC',
-                    truck: {
-                        x: myTruck.x,
-                        y: myTruck.y,
-                        angle: myTruck.angle,
-                        cargoAmount: myTruck.cargoAmount,
-                        cargoType: myTruck.cargoType
-                    }
+                    truck: { x: myTruck.x, y: myTruck.y, angle: myTruck.angle, cargoAmount: myTruck.cargoAmount, cargoType: myTruck.cargoType }
                 };
-                if (isHost) {
-                    payload.world = { zones: zones, coins: coins };
-                }
-                conn.send(payload);
+                if (isHost) payload.world = { zones: zones, coins: coins };
+                
+                client.raiseEvent(1, payload, { receivers: Photon.LoadBalancing.Constants.ReceiverGroup.Others });
             }
         }
 
         function sendInteract(zoneKey, action) {
-            if (conn && conn.open) {
-                conn.send({ type: 'INTERACT', zone: zoneKey, action: action });
+            if (client && client.isJoinedToRoom()) {
+                client.raiseEvent(2, { zone: zoneKey, action: action }, { receivers: Photon.LoadBalancing.Constants.ReceiverGroup.MasterClient });
             }
         }
 
         const keys = {};
         window.addEventListener('keydown', e => { 
-            keys[e.key] = true; 
-            keys[e.code] = true;
-
-            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) || e.key === ' ') {
-                e.preventDefault();
-            }
+            keys[e.key] = true; keys[e.code] = true;
+            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) || e.key === ' ') e.preventDefault();
         });
+        window.addEventListener('keyup', e => { keys[e.key] = false; keys[e.code] = false; });
 
-        window.addEventListener('keyup', e => { 
-            keys[e.key] = false; 
-            keys[e.code] = false;
-        });
-
-        let lastTime = performance.now();
-        let logGenTimer = 0;
-        let processTimer = 0;
-        let rentTimer = 0;
+        let lastTime = performance.now(), logGenTimer = 0, processTimer = 0, rentTimer = 0;
 
         function gameLoop(timestamp) {
             let dt = (timestamp - lastTime) / 1000;
@@ -317,12 +231,8 @@
 
                 processTimer += dt;
                 if (processTimer >= 1.0) {
-                    if (zones.sawmill1.rawLogs > 0 && zones.sawmill1.boards < zones.sawmill1.maxBoards) {
-                        zones.sawmill1.rawLogs--; zones.sawmill1.boards += 2;
-                    }
-                    if (zones.sawmill2.rawLogs > 0 && zones.sawmill2.boards < zones.sawmill2.maxBoards) {
-                        zones.sawmill2.rawLogs--; zones.sawmill2.boards += 2;
-                    }
+                    if (zones.sawmill1.rawLogs > 0 && zones.sawmill1.boards < zones.sawmill1.maxBoards) { zones.sawmill1.rawLogs--; zones.sawmill1.boards += 2; }
+                    if (zones.sawmill2.rawLogs > 0 && zones.sawmill2.boards < zones.sawmill2.maxBoards) { zones.sawmill2.rawLogs--; zones.sawmill2.boards += 2; }
                     processTimer = 0;
                 }
 
@@ -342,21 +252,14 @@
 
         function updateTruck() {
             if (fuel <= 0) return;
-
             const isUp = keys['ArrowUp'] || keys['w'] || keys['W'] || keys['Ц'] || keys['ц'] || keys['KeyW'];
             const isDown = keys['ArrowDown'] || keys['s'] || keys['S'] || keys['Ы'] || keys['ы'] || keys['KeyS'];
             const isLeft = keys['ArrowLeft'] || keys['a'] || keys['A'] || keys['Ф'] || keys['ф'] || keys['KeyA'];
             const isRight = keys['ArrowRight'] || keys['d'] || keys['D'] || keys['В'] || keys['в'] || keys['KeyD'];
 
-            if (isUp) {
-                myTruck.speed = Math.min(myTruck.maxSpeed, myTruck.speed + myTruck.accel);
-                fuel -= 0.012;
-            } else if (isDown) {
-                myTruck.speed = Math.max(-myTruck.maxSpeed / 2, myTruck.speed - myTruck.accel);
-                fuel -= 0.012;
-            } else {
-                myTruck.speed *= myTruck.friction;
-            }
+            if (isUp) { myTruck.speed = Math.min(myTruck.maxSpeed, myTruck.speed + myTruck.accel); fuel -= 0.012; }
+            else if (isDown) { myTruck.speed = Math.max(-myTruck.maxSpeed / 2, myTruck.speed - myTruck.accel); fuel -= 0.012; }
+            else { myTruck.speed *= myTruck.friction; }
 
             if (Math.abs(myTruck.speed) > 0.1) {
                 let dir = myTruck.speed > 0 ? 1 : -1;
@@ -364,11 +267,8 @@
                 if (isRight) myTruck.angle += myTruck.turnSpeed * dir;
             }
 
-            myTruck.x += Math.cos(myTruck.angle) * myTruck.speed;
-            myTruck.y += Math.sin(myTruck.angle) * myTruck.speed;
-
-            myTruck.x = Math.max(20, Math.min(canvas.width - 20, myTruck.x));
-            myTruck.y = Math.max(20, Math.min(canvas.height - 20, myTruck.y));
+            myTruck.x = Math.max(20, Math.min(canvas.width - 20, myTruck.x + Math.cos(myTruck.angle) * myTruck.speed));
+            myTruck.y = Math.max(20, Math.min(canvas.height - 20, myTruck.y + Math.sin(myTruck.angle) * myTruck.speed));
         }
 
         window.addEventListener('keydown', e => {
@@ -377,95 +277,54 @@
             if (!activeZoneKey) return;
             const activeZone = zones[activeZoneKey];
 
-            const k = e.key.toLowerCase();
-            const code = e.code;
-
-            if (code === 'Space' || e.key === ' ') {
+            if (e.code === 'Space' || e.key === ' ') {
                 if (activeZoneKey.startsWith('camp')) {
                     if (activeZone.logs > 0 && myTruck.cargoAmount < myTruck.maxCargo && (myTruck.cargoType === 'empty' || myTruck.cargoType === 'logs')) {
                         myTruck.cargoType = 'logs'; myTruck.cargoAmount++;
-                        if (isHost || myRole === 'single') {
-                            activeZone.logs--;
-                        } else {
-                            sendInteract(activeZoneKey, 'LOG_TAKEN');
-                        }
+                        if (isHost || myRole === 'single') activeZone.logs--; else sendInteract(activeZoneKey, 'LOG_TAKEN');
                     }
                 } else if (activeZoneKey.startsWith('sawmill')) {
                     if (myTruck.cargoType === 'logs' && myTruck.cargoAmount > 0 && activeZone.rawLogs < activeZone.maxLogs) {
-                        myTruck.cargoAmount--;
-                        if (myTruck.cargoAmount === 0) myTruck.cargoType = 'empty';
-                        if (isHost || myRole === 'single') {
-                            activeZone.rawLogs++;
-                        } else {
-                            sendInteract(activeZoneKey, 'LOG_UNLOADED');
-                        }
+                        myTruck.cargoAmount--; if (myTruck.cargoAmount === 0) myTruck.cargoType = 'empty';
+                        if (isHost || myRole === 'single') activeZone.rawLogs++; else sendInteract(activeZoneKey, 'LOG_UNLOADED');
                     } else if ((myTruck.cargoType === 'empty' || myTruck.cargoType === 'boards') && myTruck.cargoAmount < myTruck.maxCargo && activeZone.boards > 0) {
                         myTruck.cargoType = 'boards'; myTruck.cargoAmount++;
-                        if (isHost || myRole === 'single') {
-                            activeZone.boards--;
-                        } else {
-                            sendInteract(activeZoneKey, 'BOARD_TAKEN');
-                        }
+                        if (isHost || myRole === 'single') activeZone.boards--; else sendInteract(activeZoneKey, 'BOARD_TAKEN');
                     }
                 } else if (activeZoneKey.startsWith('town')) {
                     if (myTruck.cargoType === 'boards' && myTruck.cargoAmount > 0) {
-                        myTruck.cargoAmount--;
-                        if (myTruck.cargoAmount === 0) myTruck.cargoType = 'empty';
+                        myTruck.cargoAmount--; if (myTruck.cargoAmount === 0) myTruck.cargoType = 'empty';
                         if (isHost || myRole === 'single') {
-                            activeZone.boards++;
-                            if (activeZone.boards >= boardsPerHouse) {
-                                activeZone.boards -= boardsPerHouse; activeZone.houses++; coins += 50;
-                            }
-                        } else {
-                            sendInteract(activeZoneKey, 'BOARD_DELIVERED');
-                        }
+                            activeZone.boards++; if (activeZone.boards >= boardsPerHouse) { activeZone.boards -= boardsPerHouse; activeZone.houses++; coins += 50; }
+                        } else sendInteract(activeZoneKey, 'BOARD_DELIVERED');
                     }
                 }
-            } else if (code === 'KeyF' || k === 'f' || k === 'а') {
+            } else if (e.code === 'KeyF' || e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'а') {
                 if (activeZoneKey === 'gas' && coins >= 10 && fuel < 100) {
                     fuel = Math.min(100, fuel + 35);
-                    if (isHost || myRole === 'single') {
-                        coins -= 10;
-                    } else {
-                        sendInteract('gas', 'REFUEL');
-                    }
+                    if (isHost || myRole === 'single') coins -= 10; else sendInteract('gas', 'REFUEL');
                 }
             }
         });
 
         function getActiveZoneKey() {
-            for (let key in zones) {
-                let z = zones[key];
-                if (Math.hypot(myTruck.x - z.x, myTruck.y - z.y) < 55) return key;
-            }
+            for (let key in zones) { if (Math.hypot(myTruck.x - zones[key].x, myTruck.y - zones[key].y) < 55) return key; }
             return null;
-        }
-
-        function getActiveZone() {
-            const key = getActiveZoneKey();
-            return key ? zones[key] : null;
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawRoads();
-            drawHouses();
-            drawZones();
-            drawTruckObject(otherTruck);
-            drawTruckObject(myTruck);
+            drawRoads(); drawHouses(); drawZones();
+            drawTruckObject(otherTruck); drawTruckObject(myTruck);
             updateUI();
         }
 
         function drawRoads() {
             ctx.lineWidth = 42; ctx.strokeStyle = '#444'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
             ctx.beginPath();
-            ctx.moveTo(100, 280); ctx.lineTo(860, 280);
-            ctx.moveTo(480, 90);  ctx.lineTo(480, 470);
-            ctx.moveTo(100, 90);  ctx.lineTo(860, 90);  ctx.lineTo(860, 470);
-            ctx.lineTo(100, 470); ctx.lineTo(100, 90);
-            ctx.stroke();
-
-            ctx.lineWidth = 2; ctx.strokeStyle = '#fbc02d'; ctx.setLineDash([8, 8]); ctx.stroke(); ctx.setLineDash([]);
+            ctx.moveTo(100, 280); ctx.lineTo(860, 280); ctx.moveTo(480, 90); ctx.lineTo(480, 470);
+            ctx.moveTo(100, 90); ctx.lineTo(860, 90); ctx.lineTo(860, 470); ctx.lineTo(100, 470); ctx.lineTo(100, 90);
+            ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = '#fbc02d'; ctx.setLineDash([8, 8]); ctx.stroke(); ctx.setLineDash([]);
         }
 
         function drawZones() {
@@ -474,18 +333,12 @@
                 ctx.beginPath(); ctx.arc(z.x, z.y, 40, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.15)'; ctx.fill();
                 ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
-
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
 
-                if (key.startsWith('camp')) {
-                    ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🪵 ${z.logs}/${z.maxLogs}`, z.x, z.y + 55);
-                } else if (key.startsWith('sawmill')) {
-                    ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🪵${z.rawLogs} ➔ 🪵${z.boards}`, z.x, z.y + 55);
-                } else if (key.startsWith('town')) {
-                    ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🏡 Домов: ${z.houses}`, z.x, z.y + 55);
-                } else if (key === 'gas') {
-                    ctx.fillText('⛽ АЗС', z.x, z.y - 48);
-                }
+                if (key.startsWith('camp')) { ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🪵 ${z.logs}/${z.maxLogs}`, z.x, z.y + 55); }
+                else if (key.startsWith('sawmill')) { ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🪵${z.rawLogs} ➔ 🪵${z.boards}`, z.x, z.y + 55); }
+                else if (key.startsWith('town')) { ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🏡 Домов: ${z.houses}`, z.x, z.y + 55); }
+                else if (key === 'gas') { ctx.fillText('⛽ АЗС', z.x, z.y - 48); }
             }
         }
 
@@ -496,29 +349,18 @@
 
         function drawHouseIcon(x, y) {
             ctx.fillStyle = '#d7ccc8'; ctx.fillRect(x, y, 22, 18);
-            ctx.fillStyle = '#b71c1c'; ctx.beginPath();
-            ctx.moveTo(x - 3, y); ctx.lineTo(x + 11, y - 10); ctx.lineTo(x + 25, y); ctx.fill();
+            ctx.fillStyle = '#b71c1c'; ctx.beginPath(); ctx.moveTo(x - 3, y); ctx.lineTo(x + 11, y - 10); ctx.lineTo(x + 25, y); ctx.fill();
         }
 
         function drawTruckObject(t) {
             if (t.x < 0) return;
-            ctx.save();
-            ctx.translate(t.x, t.y);
-            ctx.rotate(t.angle);
-
-            ctx.fillStyle = t.color;
-            ctx.fillRect(10, -12, 18, 24);
-
-            ctx.fillStyle = '#8d6e63';
-            ctx.fillRect(-28, -14, 36, 28);
-
+            ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.angle);
+            ctx.fillStyle = t.color; ctx.fillRect(10, -12, 18, 24);
+            ctx.fillStyle = '#8d6e63'; ctx.fillRect(-28, -14, 36, 28);
             if (t.cargoAmount > 0) {
                 ctx.fillStyle = t.cargoType === 'logs' ? '#5d4037' : '#fff59d';
-                for (let b = 0; b < t.cargoAmount; b++) {
-                    ctx.fillRect(-26 + (b * 1.6), -10, 2, 20);
-                }
+                for (let b = 0; b < t.cargoAmount; b++) ctx.fillRect(-26 + (b * 1.6), -10, 2, 20);
             }
-
             ctx.fillStyle = '#000';
             ctx.fillRect(10, -16, 7, 3); ctx.fillRect(10, 13, 7, 3);
             ctx.fillRect(-22, -16, 7, 3); ctx.fillRect(-22, 13, 7, 3);
@@ -535,20 +377,16 @@
                            `🏭 Лесопилки: №1 (${zones.sawmill1.boards} досок) | №2 (${zones.sawmill2.boards} досок)<br>` +
                            `🏡 Посёлки: Северный (${zones.town1.houses}) | Южный (${zones.town2.houses})`;
 
-            if (fuel <= 0) {
-                hint.innerHTML = "💥 <b>Бензин закончился!</b> Нажмите F5 для перезагрузки.";
-                return;
-            }
+            if (fuel <= 0) { hint.innerHTML = "💥 <b>Бензин закончился!</b> Перезагрузите страницу."; return; }
 
-            const activeZone = getActiveZone();
-            if (activeZone) {
-                if (activeZone === zones.camp1 || activeZone === zones.camp2) hint.innerHTML = `👉 <b>${activeZone.label}</b>. Нажимайте <b>[ПРОБЕЛ]</b> для погрузки бревен!`;
-                else if (activeZone === zones.sawmill1 || activeZone === zones.sawmill2) hint.innerHTML = `👉 <b>${activeZone.label}</b>. <b>[ПРОБЕЛ]</b> — погрузка/сгрузка.`;
-                else if (activeZone === zones.town1 || activeZone === zones.town2) hint.innerHTML = `🏡 <b>${activeZone.label}</b>. Сгружайте ДОСКИ на <b>[ПРОБЕЛ]</b> для постройки!`;
-                else if (activeZone === zones.gas) hint.innerHTML = `⛽ <b>АЗС</b>. Нажмите <b>[F]</b> для заправки!`;
-            } else {
-                hint.innerHTML = "Управление: <b>WASD / Стрелочки</b>.";
-            }
+            const key = getActiveZoneKey();
+            if (key) {
+                const z = zones[key];
+                if (key.startsWith('camp')) hint.innerHTML = `👉 <b>${z.label}</b>. <b>[ПРОБЕЛ]</b> — погрузка бревен.`;
+                else if (key.startsWith('sawmill')) hint.innerHTML = `👉 <b>${z.label}</b>. <b>[ПРОБЕЛ]</b> — погрузка/сгрузка.`;
+                else if (key.startsWith('town')) hint.innerHTML = `🏡 <b>${z.label}</b>. Сгружайте ДОСКИ на <b>[ПРОБЕЛ]</b>!`;
+                else if (key === 'gas') hint.innerHTML = `⛽ <b>АЗС</b>. Нажмите <b>[F]</b> для заправки!`;
+            } else hint.innerHTML = "Управление: <b>WASD / Стрелочки</b>.";
         }
 
         requestAnimationFrame(gameLoop);
