@@ -2,8 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Лесозаготовка: Мультиплеер (PeerJS + TURN Relay)</title>
-    <!-- Подключаем библиотеку PeerJS -->
+    <title>Лесозаготовка: Мультиплеер (Исправленный)</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { 
@@ -67,10 +66,10 @@
 </head>
 <body>
 
-    <h2>🌲 ЛЕСОЗАГОТОВКА: ОНЛАЙН (TURN RELAY) 🏡</h2>
+    <h2>🌲 ЛЕСОЗАГОТОВКА: ОНЛАЙН МУЛЬТИПЛЕЕР 🏡</h2>
 
     <div class="network-panel">
-        <span id="netStatus">Инициализация PeerJS...</span> &nbsp;|&nbsp;
+        <span id="netStatus">Статус: Готов к подключению</span> &nbsp;|&nbsp;
         <button onclick="createRoom()">Создать комнату</button>
         <input type="text" id="roomIdInput" placeholder="Код комнаты..." style="width: 120px;">
         <button onclick="joinRoom()">Подключиться</button>
@@ -85,114 +84,17 @@
     <br>
     
     <div class="hint" id="hint">
-        Управление: <b>Стрелочки / WASD</b> — движение. <b>[ПРОБЕЛ]</b> — погрузка/сгрузка. <b>[F]</b> — заправка.
+        Управление: <b>Стрелочки / WASD</b> — руление. <b>[ПРОБЕЛ]</b> — погрузка/сгрузка. <b>[F]</b> — заправка.
     </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // Инициализация PeerJS с твоими STUN / TURN серверами
-        const peerConfig = {
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { 
-                        urls: 'turn:openrelay.metered.ca:80',
-                        username: 'openrelay',
-                        credential: 'openrelay'
-                    },
-                    { 
-                        urls: 'turn:openrelay.metered.ca:443',
-                        username: 'openrelay',
-                        credential: 'openrelay'
-                    }
-                ]
-            }
-        };
-
         let peer = null;
         let conn = null;
-        let myPeerId = null;
         let isHost = false;
         let myRole = 'single';
-
-        function initPeer() {
-            peer = new Peer(peerConfig);
-
-            peer.on('open', (id) => {
-                myPeerId = id;
-                document.getElementById('netStatus').innerHTML = "🟢 Готов! Нажмите «Создать комнату» или введите код.";
-            });
-
-            peer.on('connection', (connection) => {
-                conn = connection;
-                setupConnection();
-            });
-
-            peer.on('error', (err) => {
-                showErr("Ошибка PeerJS: " + err.type + " - " + err.message);
-            });
-        }
-
-        function showErr(msg) {
-            document.getElementById('errorLog').innerHTML = "⚠️ " + msg;
-        }
-
-        function createRoom() {
-            if (!myPeerId) { showErr("Сеть еще инициализируется, подождите пару секунд..."); return; }
-            isHost = true;
-            myRole = 'host';
-            myTruck.x = 440;
-            document.getElementById('netStatus').innerHTML = `Код комнаты: <b style="color:#00fff5; font-size:18px;">${myPeerId}</b> (Передайте его другу)`;
-            document.getElementById('errorLog').innerHTML = "";
-        }
-
-        function joinRoom() {
-            const targetId = document.getElementById('roomIdInput').value.trim();
-            if (!targetId) { showErr("Введите код комнаты!"); return; }
-
-            isHost = false;
-            myRole = 'guest';
-            myTruck.x = 520;
-            myTruck.color = '#e53935';
-            otherTruck.color = '#1565c0';
-
-            document.getElementById('netStatus').innerHTML = "Подключение через TURN...";
-            conn = peer.connect(targetId);
-            setupConnection();
-        }
-
-        function setupConnection() {
-            conn.on('open', () => {
-                document.getElementById('netStatus').innerHTML = "🟢 <b style='color:#76ff03;'>ИГРОКИ ПОДКЛЮЧЕНЫ ЧЕРЕЗ TURN-РЕЛЕ!</b>";
-                document.getElementById('errorLog').innerHTML = "";
-            });
-
-            conn.on('data', (data) => {
-                if (data.truck) {
-                    otherTruck.x = data.truck.x;
-                    otherTruck.y = data.truck.y;
-                    otherTruck.angle = data.truck.angle;
-                    otherTruck.cargoAmount = data.truck.cargoAmount;
-                    otherTruck.cargoType = data.truck.cargoType;
-                }
-
-                if (!isHost && data.world) {
-                    for (let k in data.world.zones) {
-                        zones[k].logs = data.world.zones[k].logs;
-                        zones[k].rawLogs = data.world.zones[k].rawLogs;
-                        zones[k].boards = data.world.zones[k].boards;
-                        zones[k].houses = data.world.zones[k].houses;
-                    }
-                    coins = data.world.coins;
-                }
-            });
-
-            conn.on('close', () => {
-                document.getElementById('netStatus').innerHTML = "🔴 Второй игрок отключился";
-            });
-        }
 
         const myTruck = {
             x: 440, y: 280, angle: 0, speed: 0,
@@ -224,14 +126,141 @@
         const town1Houses = [{x: 820, y: 35}, {x: 860, y: 35}, {x: 900, y: 35}, {x: 820, y: 145}, {x: 860, y: 145}, {x: 900, y: 145}];
         const town2Houses = [{x: 60, y: 415}, {x: 100, y: 415}, {x: 140, y: 415}, {x: 60, y: 525}, {x: 100, y: 525}, {x: 140, y: 525}];
 
-        let syncTimer = 0;
-        function sendNetworkSync(dt) {
-            if (!conn || !conn.open) return;
+        const peerConfig = {
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ]
+            },
+            debug: 1
+        };
 
-            syncTimer += dt;
-            if (syncTimer >= 0.033) { // ~30 кадров в секунду
-                syncTimer = 0;
+        function showErr(msg) {
+            document.getElementById('errorLog').innerHTML = "⚠️ " + msg;
+        }
+
+        function initPeer(customId = null, callback = null) {
+            if (peer) peer.destroy();
+            
+            document.getElementById('errorLog').innerHTML = "";
+            document.getElementById('netStatus').innerHTML = "Подключение к серверу...";
+
+            peer = customId ? new Peer(customId, peerConfig) : new Peer(peerConfig);
+
+            peer.on('open', id => {
+                document.getElementById('netStatus').innerHTML = `Твой код: <b style="color:#00fff5; font-size:16px;">${id}</b>`;
+                if (callback) callback(id);
+            });
+
+            peer.on('connection', c => {
+                conn = c;
+                setupConnection();
+            });
+
+            peer.on('error', err => {
+                console.error("PeerJS Error:", err);
+                if (err.type === 'unavailable-id') {
+                    showErr("Этот код уже занят, попробуйте еще раз.");
+                } else if (err.type === 'peer-unavailable') {
+                    showErr("Комната с таким кодом не найдена! Проверьте правильность ввода.");
+                } else {
+                    showErr("Ошибка сети: " + err.type);
+                }
+            });
+        }
+
+        function createRoom() {
+            const randomCode = "log-" + Math.floor(1000 + Math.random() * 9000);
+            initPeer(randomCode, () => {
+                isHost = true;
+                myRole = 'host';
+                myTruck.x = 440;
+                document.getElementById('netStatus').innerHTML += " (Ждем второго игрока...)";
+            });
+        }
+
+        function joinRoom() {
+            const hostId = document.getElementById('roomIdInput').value.trim();
+            if (!hostId) {
+                showErr("Введите код комнаты в текстовое поле!");
+                return;
+            }
+
+            initPeer(null, () => {
+                document.getElementById('netStatus').innerHTML = "Соединение с хозяином комнаты...";
+                conn = peer.connect(hostId, { reliable: true });
+                isHost = false;
+                myRole = 'guest';
+                myTruck.x = 520;
+                myTruck.color = '#e53935';
+                otherTruck.color = '#1565c0';
+                setupConnection();
+            });
+        }
+
+        function setupConnection() {
+            if (!conn) return;
+
+            conn.on('open', () => {
+                document.getElementById('netStatus').innerHTML = "🟢 <b style='color:#76ff03;'>Игроки подключены!</b>";
+                document.getElementById('errorLog').innerHTML = "";
+            });
+
+            conn.on('data', data => {
+                if (data.type === 'SYNC') {
+                    otherTruck.x = data.truck.x;
+                    otherTruck.y = data.truck.y;
+                    otherTruck.angle = data.truck.angle;
+                    otherTruck.cargoAmount = data.truck.cargoAmount;
+                    otherTruck.cargoType = data.truck.cargoType;
+
+                    if (!isHost && data.world) {
+                        for (let k in data.world.zones) {
+                            zones[k].logs = data.world.zones[k].logs;
+                            zones[k].rawLogs = data.world.zones[k].rawLogs;
+                            zones[k].boards = data.world.zones[k].boards;
+                            zones[k].houses = data.world.zones[k].houses;
+                        }
+                        coins = data.world.coins;
+                    }
+                } else if (data.type === 'INTERACT' && isHost) {
+                    handleGuestInteract(data.zone, data.action);
+                }
+            });
+
+            conn.on('close', () => {
+                document.getElementById('netStatus').innerHTML = "🔴 Второй игрок отключился";
+            });
+        }
+
+        function handleGuestInteract(zoneKey, action) {
+            const z = zones[zoneKey];
+            if (action === 'LOG_TAKEN') {
+                if (z && z.logs > 0) z.logs--;
+            } else if (action === 'LOG_UNLOADED') {
+                if (z && z.rawLogs < z.maxLogs) z.rawLogs++;
+            } else if (action === 'BOARD_TAKEN') {
+                if (z && z.boards > 0) z.boards--;
+            } else if (action === 'BOARD_DELIVERED') {
+                if (z) {
+                    z.boards++;
+                    if (z.boards >= boardsPerHouse) {
+                        z.boards -= boardsPerHouse;
+                        z.houses++;
+                        coins += 50;
+                    }
+                }
+            } else if (action === 'REFUEL') {
+                if (coins >= 10) coins -= 10;
+            }
+        }
+
+        function sendNetworkSync() {
+            if (conn && conn.open) {
                 const payload = {
+                    type: 'SYNC',
                     truck: {
                         x: myTruck.x,
                         y: myTruck.y,
@@ -247,9 +276,26 @@
             }
         }
 
+        function sendInteract(zoneKey, action) {
+            if (conn && conn.open) {
+                conn.send({ type: 'INTERACT', zone: zoneKey, action: action });
+            }
+        }
+
         const keys = {};
-        window.addEventListener('keydown', e => { keys[e.key] = true; });
-        window.addEventListener('keyup', e => { keys[e.key] = false; });
+        window.addEventListener('keydown', e => { 
+            keys[e.key] = true; 
+            keys[e.code] = true;
+
+            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) || e.key === ' ') {
+                e.preventDefault();
+            }
+        });
+
+        window.addEventListener('keyup', e => { 
+            keys[e.key] = false; 
+            keys[e.code] = false;
+        });
 
         let lastTime = performance.now();
         let logGenTimer = 0;
@@ -289,7 +335,7 @@
             }
 
             updateTruck();
-            sendNetworkSync(dt);
+            sendNetworkSync();
             draw();
             requestAnimationFrame(gameLoop);
         }
@@ -297,10 +343,15 @@
         function updateTruck() {
             if (fuel <= 0) return;
 
-            if (keys['ArrowUp'] || keys['w'] || keys['W'] || keys['Ц'] || keys['ц']) {
+            const isUp = keys['ArrowUp'] || keys['w'] || keys['W'] || keys['Ц'] || keys['ц'] || keys['KeyW'];
+            const isDown = keys['ArrowDown'] || keys['s'] || keys['S'] || keys['Ы'] || keys['ы'] || keys['KeyS'];
+            const isLeft = keys['ArrowLeft'] || keys['a'] || keys['A'] || keys['Ф'] || keys['ф'] || keys['KeyA'];
+            const isRight = keys['ArrowRight'] || keys['d'] || keys['D'] || keys['В'] || keys['в'] || keys['KeyD'];
+
+            if (isUp) {
                 myTruck.speed = Math.min(myTruck.maxSpeed, myTruck.speed + myTruck.accel);
                 fuel -= 0.012;
-            } else if (keys['ArrowDown'] || keys['s'] || keys['S'] || keys['Ы'] || keys['ы']) {
+            } else if (isDown) {
                 myTruck.speed = Math.max(-myTruck.maxSpeed / 2, myTruck.speed - myTruck.accel);
                 fuel -= 0.012;
             } else {
@@ -309,8 +360,8 @@
 
             if (Math.abs(myTruck.speed) > 0.1) {
                 let dir = myTruck.speed > 0 ? 1 : -1;
-                if (keys['ArrowLeft'] || keys['a'] || keys['A'] || keys['Ф'] || keys['ф']) myTruck.angle -= myTruck.turnSpeed * dir;
-                if (keys['ArrowRight'] || keys['d'] || keys['D'] || keys['В'] || keys['в']) myTruck.angle += myTruck.turnSpeed * dir;
+                if (isLeft) myTruck.angle -= myTruck.turnSpeed * dir;
+                if (isRight) myTruck.angle += myTruck.turnSpeed * dir;
             }
 
             myTruck.x += Math.cos(myTruck.angle) * myTruck.speed;
@@ -322,45 +373,77 @@
 
         window.addEventListener('keydown', e => {
             if (fuel <= 0) return;
-            const activeZone = getActiveZone();
+            const activeZoneKey = getActiveZoneKey();
+            if (!activeZoneKey) return;
+            const activeZone = zones[activeZoneKey];
 
-            if (e.key === ' ') {
-                if (!activeZone) return;
+            const k = e.key.toLowerCase();
+            const code = e.code;
 
-                if (activeZone === zones.camp1 || activeZone === zones.camp2) {
+            if (code === 'Space' || e.key === ' ') {
+                if (activeZoneKey.startsWith('camp')) {
                     if (activeZone.logs > 0 && myTruck.cargoAmount < myTruck.maxCargo && (myTruck.cargoType === 'empty' || myTruck.cargoType === 'logs')) {
-                        myTruck.cargoType = 'logs'; myTruck.cargoAmount++; activeZone.logs--;
+                        myTruck.cargoType = 'logs'; myTruck.cargoAmount++;
+                        if (isHost || myRole === 'single') {
+                            activeZone.logs--;
+                        } else {
+                            sendInteract(activeZoneKey, 'LOG_TAKEN');
+                        }
                     }
-                } else if (activeZone === zones.sawmill1 || activeZone === zones.sawmill2) {
+                } else if (activeZoneKey.startsWith('sawmill')) {
                     if (myTruck.cargoType === 'logs' && myTruck.cargoAmount > 0 && activeZone.rawLogs < activeZone.maxLogs) {
-                        myTruck.cargoAmount--; activeZone.rawLogs++;
+                        myTruck.cargoAmount--;
                         if (myTruck.cargoAmount === 0) myTruck.cargoType = 'empty';
+                        if (isHost || myRole === 'single') {
+                            activeZone.rawLogs++;
+                        } else {
+                            sendInteract(activeZoneKey, 'LOG_UNLOADED');
+                        }
                     } else if ((myTruck.cargoType === 'empty' || myTruck.cargoType === 'boards') && myTruck.cargoAmount < myTruck.maxCargo && activeZone.boards > 0) {
-                        myTruck.cargoType = 'boards'; myTruck.cargoAmount++; activeZone.boards--;
+                        myTruck.cargoType = 'boards'; myTruck.cargoAmount++;
+                        if (isHost || myRole === 'single') {
+                            activeZone.boards--;
+                        } else {
+                            sendInteract(activeZoneKey, 'BOARD_TAKEN');
+                        }
                     }
-                } else if (activeZone === zones.town1 || activeZone === zones.town2) {
+                } else if (activeZoneKey.startsWith('town')) {
                     if (myTruck.cargoType === 'boards' && myTruck.cargoAmount > 0) {
-                        myTruck.cargoAmount--; activeZone.boards++;
+                        myTruck.cargoAmount--;
                         if (myTruck.cargoAmount === 0) myTruck.cargoType = 'empty';
-
-                        if (activeZone.boards >= boardsPerHouse) {
-                            activeZone.boards -= boardsPerHouse; activeZone.houses++; coins += 50;
+                        if (isHost || myRole === 'single') {
+                            activeZone.boards++;
+                            if (activeZone.boards >= boardsPerHouse) {
+                                activeZone.boards -= boardsPerHouse; activeZone.houses++; coins += 50;
+                            }
+                        } else {
+                            sendInteract(activeZoneKey, 'BOARD_DELIVERED');
                         }
                     }
                 }
-            } else if (e.key === 'f' || e.key === 'F' || e.key === 'а' || e.key === 'А') {
-                if (activeZone === zones.gas && coins >= 10 && fuel < 100) {
-                    fuel = Math.min(100, fuel + 35); coins -= 10;
+            } else if (code === 'KeyF' || k === 'f' || k === 'а') {
+                if (activeZoneKey === 'gas' && coins >= 10 && fuel < 100) {
+                    fuel = Math.min(100, fuel + 35);
+                    if (isHost || myRole === 'single') {
+                        coins -= 10;
+                    } else {
+                        sendInteract('gas', 'REFUEL');
+                    }
                 }
             }
         });
 
-        function getActiveZone() {
+        function getActiveZoneKey() {
             for (let key in zones) {
                 let z = zones[key];
-                if (Math.hypot(myTruck.x - z.x, myTruck.y - z.y) < 55) return z;
+                if (Math.hypot(myTruck.x - z.x, myTruck.y - z.y) < 55) return key;
             }
             return null;
+        }
+
+        function getActiveZone() {
+            const key = getActiveZoneKey();
+            return key ? zones[key] : null;
         }
 
         function draw() {
@@ -395,7 +478,7 @@
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
 
                 if (key.startsWith('camp')) {
-                    ctx.fillText('🌲 ' + z.label, z.x, z.y - 48); ctx.fillText(`🪵 ${z.logs}/${z.maxLogs}`, z.x, z.y + 55);
+                    ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🪵 ${z.logs}/${z.maxLogs}`, z.x, z.y + 55);
                 } else if (key.startsWith('sawmill')) {
                     ctx.fillText(z.label, z.x, z.y - 48); ctx.fillText(`🪵${z.rawLogs} ➔ 🪵${z.boards}`, z.x, z.y + 55);
                 } else if (key.startsWith('town')) {
@@ -453,22 +536,21 @@
                            `🏡 Посёлки: Северный (${zones.town1.houses}) | Южный (${zones.town2.houses})`;
 
             if (fuel <= 0) {
-                hint.innerHTML = "💥 <b>Бензин закончился!</b> Перезагрузите страницу.";
+                hint.innerHTML = "💥 <b>Бензин закончился!</b> Нажмите F5 для перезагрузки.";
                 return;
             }
 
             const activeZone = getActiveZone();
             if (activeZone) {
-                if (activeZone === zones.camp1 || activeZone === zones.camp2) hint.innerHTML = `👉 <b>${activeZone.label}</b>. Нажмите <b>[ПРОБЕЛ]</b> для погрузки бревен!`;
-                else if (activeZone === zones.sawmill1 || activeZone === zones.sawmill2) hint.innerHTML = `👉 <b>${activeZone.label}</b>. <b>[ПРОБЕЛ]</b> — погрузка бревен / забрание досок.`;
-                else if (activeZone === zones.town1 || activeZone === zones.town2) hint.innerHTML = `🏡 <b>${activeZone.label}</b>. Сгружайте ДОСКИ на <b>[ПРОБЕЛ]</b>!`;
+                if (activeZone === zones.camp1 || activeZone === zones.camp2) hint.innerHTML = `👉 <b>${activeZone.label}</b>. Нажимайте <b>[ПРОБЕЛ]</b> для погрузки бревен!`;
+                else if (activeZone === zones.sawmill1 || activeZone === zones.sawmill2) hint.innerHTML = `👉 <b>${activeZone.label}</b>. <b>[ПРОБЕЛ]</b> — погрузка/сгрузка.`;
+                else if (activeZone === zones.town1 || activeZone === zones.town2) hint.innerHTML = `🏡 <b>${activeZone.label}</b>. Сгружайте ДОСКИ на <b>[ПРОБЕЛ]</b> для постройки!`;
                 else if (activeZone === zones.gas) hint.innerHTML = `⛽ <b>АЗС</b>. Нажмите <b>[F]</b> для заправки!`;
             } else {
                 hint.innerHTML = "Управление: <b>WASD / Стрелочки</b>.";
             }
         }
 
-        initPeer();
         requestAnimationFrame(gameLoop);
     </script>
 </body>
